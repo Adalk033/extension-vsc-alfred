@@ -1,0 +1,240 @@
+{
+  "name": "alfred-vsc",
+  "displayName": "Alfred",
+  "description": "Chat lateral con Alfred (modelo local) dentro de VSCode.",
+  "version": "0.1.0",
+  "publisher": "alfred",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Adalk033/extension-vsc-alfred.git"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other",
+    "Chat",
+    "Machine Learning"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "alfred",
+          "title": "Alfred",
+          "icon": "media/alfred.svg"
+        }
+      ]
+    },
+    "views": {
+      "alfred": [
+        {
+          "type": "webview",
+          "id": "alfred.chatView",
+          "name": "Chat",
+          "icon": "media/alfred.svg",
+          "contextualTitle": "Alfred"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "alfred.focusChat",
+        "title": "Alfred: Focus chat",
+        "category": "Alfred"
+      },
+      {
+        "command": "alfred.newConversation",
+        "title": "Alfred: New conversation",
+        "category": "Alfred"
+      },
+      {
+        "command": "alfred.cancel",
+        "title": "Alfred: Cancel current generation",
+        "category": "Alfred"
+      },
+      {
+        "command": "alfred.explainSelection",
+        "title": "Alfred: Explain selection",
+        "category": "Alfred"
+      },
+      {
+        "command": "alfred.refactorSelection",
+        "title": "Alfred: Refactor selection",
+        "category": "Alfred"
+      },
+      {
+        "command": "alfred.generateTests",
+        "title": "Alfred: Generate tests for selection",
+        "category": "Alfred"
+      },
+      {
+        "command": "alfred.editWithAlfred",
+        "title": "Alfred: Edit selection with Agent",
+        "category": "Alfred"
+      },
+      {
+        "command": "alfred.toggleAgentMode",
+        "title": "Alfred: Toggle Agent mode",
+        "category": "Alfred"
+      },
+      {
+        "command": "alfred.checkBackend",
+        "title": "Alfred: Check backend status",
+        "category": "Alfred"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "when": "editorHasSelection",
+          "command": "alfred.explainSelection",
+          "group": "alfred@1"
+        },
+        {
+          "when": "editorHasSelection",
+          "command": "alfred.refactorSelection",
+          "group": "alfred@2"
+        },
+        {
+          "when": "editorHasSelection",
+          "command": "alfred.generateTests",
+          "group": "alfred@3"
+        },
+        {
+          "when": "editorHasSelection",
+          "command": "alfred.editWithAlfred",
+          "group": "alfred@4"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "alfred.editWithAlfred",
+        "key": "ctrl+i",
+        "when": "editorTextFocus && editorHasSelection"
+      }
+    ],
+    "configuration": {
+      "title": "Alfred",
+      "properties": {
+        "alfred.backendUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1:8000",
+          "description": "URL base del backend de Alfred."
+        },
+        "alfred.requestTimeoutMs": {
+          "type": "number",
+          "default": 120000,
+          "description": "Timeout (ms) para llamadas no-streaming al backend."
+        },
+        "alfred.healthCheckIntervalMs": {
+          "type": "number",
+          "default": 15000,
+          "description": "Intervalo (ms) entre comprobaciones automaticas de /health. 0 desactiva."
+        },
+        "alfred.agent.autoApprove": {
+          "type": "array",
+          "default": [
+            "read_file",
+            "list_dir",
+            "find_files",
+            "search_text"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "Lista de tools del modo agent que se aprueban automaticamente sin pedir confirmacion (incluye nombres MCP prefijados, ej: git__status)."
+        },
+        "alfred.agent.mcpServers": {
+          "type": "array",
+          "default": [
+            {
+              "name": "alfred",
+              "command": "npx",
+              "args": [
+                "-y",
+                "alfred-mcp"
+              ],
+              "enabled": true
+            },
+            {
+              "name": "git",
+              "command": "uvx",
+              "args": [
+                "mcp-server-git"
+              ],
+              "enabled": true
+            }
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "command": {
+                "type": "string"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "cwd": {
+                "type": "string"
+              },
+              "env": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "enabled": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "name",
+              "command"
+            ]
+          },
+          "description": "Servidores MCP stdio usados por el modo agent. Soporta ${workspaceFolder} y ${env:VAR} en command/args/cwd/env."
+        },
+        "alfred.agent.maxIterations": {
+          "type": "number",
+          "default": 10,
+          "minimum": 1,
+          "description": "Maximo de iteraciones del loop agentico por mensaje."
+        },
+        "alfred.agent.toolTimeoutMs": {
+          "type": "number",
+          "default": 30000,
+          "minimum": 1000,
+          "description": "Timeout en ms para ejecutar cada tool del agente."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p ./",
+    "watch": "tsc -w -p ./",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf dist"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.90.0",
+    "rimraf": "^5.0.7",
+    "typescript": "^5.5.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  }
+}
