@@ -1,4 +1,4 @@
-# Alfred - Extension VSCode (Fase 2 + Fase 4)
+# Alfred - Extension VSCode
 
 Chat lateral conectado al backend local de Alfred (`REST :8000` + SSE), con
 modo `Agent` para bucle de tools y aprobacion humana.
@@ -91,4 +91,3 @@ Luego abre `extension-vsc/` en VSCode y ejecuta `F5`.
 - El estado del backend se refleja en la status bar (`alfred.checkBackend`).
 - En modo `Agent`, las tools MCP se exponen con prefijo `server__tool` para evitar colisiones.
 - Las tools remotas y las escrituras locales requieren confirmacion explicita, salvo si estan en `autoApprove`.
-Hola mundo
