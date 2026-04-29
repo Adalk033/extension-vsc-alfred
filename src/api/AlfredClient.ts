@@ -95,6 +95,10 @@ export class AlfredClient {
     return this.requestJson("POST", "/models/change", opts);
   }
 
+  async unloadModel(): Promise<{ status: string }> {
+    return this.requestJson("POST", "/models/unload");
+  }
+
   // ---------------------------------------------------------------- Conversaciones
   async createConversation(title?: string): Promise<{ id: string; title: string }> {
     return this.requestJson("POST", "/conversations", title ? { title } : {});

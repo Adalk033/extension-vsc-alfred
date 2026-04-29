@@ -376,7 +376,7 @@ function loadMcpSdk(): {
     Client: McpClientCtor;
   };
   // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const stdioMod = require("@modelcontextprotocol/sdk/client/stdio") as {
+  const stdioMod = require("@modelcontextprotocol/sdk/client/stdio.js") as {
     StdioClientTransport: McpStdioTransportCtor;
   };
 

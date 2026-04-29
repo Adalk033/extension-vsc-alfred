@@ -21,9 +21,9 @@ export interface ModelInfo {
 
 // host -> webview
 export type ToWebviewMessage =
-  | { type: "init"; conversationId: string | null; messages: ChatMessage[]; models: ModelInfo[]; activeModel: string | null; backendOk: boolean; mode: ChatMode }
+  | { type: "init"; conversationId: string | null; messages: ChatMessage[]; models: ModelInfo[]; activeModel: string | null; modelLoaded: boolean; backendOk: boolean; mode: ChatMode }
   | { type: "set-mode"; mode: ChatMode }
-  | { type: "models"; models: ModelInfo[]; activeModel: string | null }
+  | { type: "models"; models: ModelInfo[]; activeModel: string | null; modelLoaded: boolean }
   | { type: "backend-status"; ok: boolean; reason?: string }
   | { type: "message-append"; message: ChatMessage }
   | { type: "stream-start"; messageId: string }
@@ -43,5 +43,6 @@ export type FromWebviewMessage =
   | { type: "cancel" }
   | { type: "new-conversation" }
   | { type: "change-model"; modelName: string }
+  | { type: "unload-model" }
   | { type: "refresh-models" }
   | { type: "open-settings" };

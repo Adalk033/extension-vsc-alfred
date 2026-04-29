@@ -134,6 +134,18 @@ export class ApprovalGate {
       const newString = stringArg(args, "new_string");
       return this.fs.previewEditFile(relPath, oldString, newString);
     }
+    if (call.name === "append_file") {
+      const relPath = stringArg(args, "path");
+      const content = stringArg(args, "content");
+      return this.fs.previewAppendFile(relPath, content);
+    }
+    if (call.name === "replace_lines") {
+      const relPath = stringArg(args, "path");
+      const startLine = numberArg(args, "start_line");
+      const endLine = numberArg(args, "end_line");
+      const content = stringArg(args, "content");
+      return this.fs.previewReplaceLines(relPath, startLine, endLine, content);
+    }
     throw new Error(`Tool no soportada para preview: ${call.name}`);
   }
 }
@@ -150,6 +162,14 @@ function stringArg(args: Record<string, unknown>, key: string): string {
   const value = args[key];
   if (typeof value !== "string") {
     throw new Error(`Argumento '${key}' debe ser string.`);
+  }
+  return value;
+}
+
+function numberArg(args: Record<string, unknown>, key: string): number {
+  const value = args[key];
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    throw new Error(`Argumento '${key}' debe ser number.`);
   }
   return value;
 }

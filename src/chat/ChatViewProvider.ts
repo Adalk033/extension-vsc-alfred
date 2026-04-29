@@ -32,6 +32,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
 
   private models: ModelInfo[] = [];
   private activeModel: string | null = null;
+  private modelLoaded = false;
   private messages: ChatMessage[] = [];
   private conversationId: string | null = null;
   private webviewReady = false;
@@ -192,17 +193,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     const ok = await this.health.checkOnce();
     let models: ModelInfo[] = [];
     let active: string | null = null;
+    let loaded = false;
     if (ok) {
       try {
         models = await this.client.listModels();
         const status = await this.client.modelStatus();
-        active = status.llm_model || null;
+        loaded = !!status.llm_loaded;
+        active = status.llm_loaded ? status.llm_model || null : null;
       } catch {
         /* el health pasa de OK a KO si esto fallo */
       }
     }
     this.models = models;
     this.activeModel = active;
+    this.modelLoaded = loaded;
 
     this.post({
       type: "init",
@@ -210,6 +214,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       messages: this.messages,
       models,
       activeModel: active,
+      modelLoaded: loaded,
       backendOk: ok,
       mode: this.mode,
     });
@@ -220,8 +225,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       const models = await this.client.listModels();
       const status = await this.client.modelStatus();
       this.models = models;
-      this.activeModel = status.llm_model || null;
-      this.post({ type: "models", models, activeModel: this.activeModel });
+      this.modelLoaded = !!status.llm_loaded;
+      this.activeModel = status.llm_loaded ? status.llm_model || null : null;
+      this.post({ type: "models", models, activeModel: this.activeModel, modelLoaded: this.modelLoaded });
     } catch {
       /* silencioso */
     }
@@ -249,6 +255,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       case "change-model":
         await this.handleChangeModel(msg.modelName);
         break;
+      case "unload-model":
+        await this.handleUnloadModel();
+        break;
       case "refresh-models":
         await this.refreshModels();
         break;
@@ -265,10 +274,24 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     try {
       await this.client.changeModel({ model_name: modelName });
       this.activeModel = modelName;
-      this.post({ type: "models", models: this.models, activeModel: this.activeModel });
+      this.modelLoaded = true;
+      this.post({ type: "models", models: this.models, activeModel: this.activeModel, modelLoaded: this.modelLoaded });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       void vscode.window.showErrorMessage(`No se pudo cambiar el modelo: ${msg}`);
+    }
+  }
+
+  private async handleUnloadModel(): Promise<void> {
+    try {
+      await this.client.unloadModel();
+      const status = await this.client.modelStatus();
+      this.modelLoaded = !!status.llm_loaded;
+      this.activeModel = status.llm_loaded ? status.llm_model || null : null;
+      this.post({ type: "models", models: this.models, activeModel: this.activeModel, modelLoaded: this.modelLoaded });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      void vscode.window.showErrorMessage(`No se pudo descargar el modelo: ${msg}`);
     }
   }
 
@@ -313,6 +336,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     this.post({ type: "stream-start", messageId: assistantMsg.id });
 
     const ac = new AbortController();
+    this.health.stop();
     this.currentStream = ac;
     this.currentAssistantMsgId = assistantMsg.id;
 
@@ -340,13 +364,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       const aborted =
         ac.signal.aborted ||
         (err instanceof Error && (err.name === "AbortError" || /aborted/i.test(err.message)));
-      const message = aborted
-        ? "Generacion cancelada."
-        : err instanceof AlfredApiError
-        ? err.message
-        : err instanceof Error
-        ? err.message
-        : String(err);
+      const message = aborted ? "Generacion cancelada." : this.formatStreamError(err);
       assistantMsg.content = assistantMsg.content || `*${message}*`;
       assistantMsg.pending = false;
       await this.persistMessages();
@@ -357,6 +375,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
         this.currentRequestId = null;
         this.currentAssistantMsgId = null;
       }
+      this.health.start();
     }
   }
 
@@ -395,6 +414,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     this.post({ type: "stream-start", messageId: assistantMsg.id });
 
     const ac = new AbortController();
+    this.health.stop();
     this.currentStream = ac;
     this.currentAssistantMsgId = assistantMsg.id;
 
@@ -438,13 +458,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       const aborted =
         ac.signal.aborted ||
         (err instanceof Error && (err.name === "AbortError" || /aborted|cancel/i.test(err.message)));
-      const message = aborted
-        ? "Generacion cancelada."
-        : err instanceof AlfredApiError
-        ? err.message
-        : err instanceof Error
-        ? err.message
-        : String(err);
+      const message = aborted ? "Generacion cancelada." : this.formatStreamError(err);
       assistantMsg.content = assistantMsg.content || `*${message}*`;
       assistantMsg.pending = false;
       await this.persistMessages();
@@ -455,7 +469,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
         this.currentRequestId = null;
         this.currentAssistantMsgId = null;
       }
+      this.health.start();
     }
+  }
+
+  private formatStreamError(err: unknown): string {
+    if (err instanceof AlfredApiError) {
+      return err.message;
+    }
+
+    const raw = err instanceof Error ? err.message : String(err);
+    if (/\bterminated\b/i.test(raw) || /UND_ERR_SOCKET/i.test(raw)) {
+      return "Conexion interrumpida con el backend durante el stream (terminated).";
+    }
+    return raw;
   }
 
   private handleAgentLoopEvent(
@@ -569,6 +596,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
         <button id="mode-agent-btn" class="mode-btn" type="button" data-mode="agent">Agent</button>
       </div>
       <select id="model-select" title="Modelo activo"></select>
+      <button id="unload-model-btn" type="button" title="Descargar modelo de memoria">Detener modelo</button>
       <button id="new-btn" title="Nueva conversacion">+</button>
     </div>
   </header>

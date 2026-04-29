@@ -14,6 +14,8 @@ const MAX_SEARCH_RESULTS = 200;
 const WRITE_TOOLS = new Set<string>([
   "write_file",
   "edit_file",
+  "append_file",
+  "replace_lines",
   "create_file",
 ]);
 
@@ -24,6 +26,8 @@ const LOCAL_TOOLS = new Set<string>([
   "search_text",
   "write_file",
   "edit_file",
+  "append_file",
+  "replace_lines",
 ]);
 
 export interface WorkspaceFsOptions {
@@ -129,6 +133,34 @@ export class WorkspaceFs {
           required: ["path", "old_string", "new_string"],
         },
       },
+      {
+        name: "append_file",
+        description:
+          "Agrega texto al final de un archivo existente o nuevo. Preferir para anadir contenido al final sin reescribir el archivo completo. Requiere aprobacion del usuario.",
+        input_schema: {
+          type: "object",
+          properties: {
+            path: { type: "string" },
+            content: { type: "string" },
+          },
+          required: ["path", "content"],
+        },
+      },
+      {
+        name: "replace_lines",
+        description:
+          "Reemplaza un rango inclusivo de lineas en un archivo usando numeros de linea 1-based. Preferir para modificar codigo en una zona concreta sin depender de coincidencias exactas largas. Requiere aprobacion del usuario.",
+        input_schema: {
+          type: "object",
+          properties: {
+            path: { type: "string" },
+            start_line: { type: "number", description: "Linea inicial inclusiva, base 1." },
+            end_line: { type: "number", description: "Linea final inclusiva, base 1." },
+            content: { type: "string", description: "Nuevo bloque que reemplazara esas lineas." },
+          },
+          required: ["path", "start_line", "end_line", "content"],
+        },
+      },
     ];
   }
 
@@ -170,6 +202,21 @@ export class WorkspaceFs {
               stringArg(args, "path"),
               stringArg(args, "old_string"),
               stringArg(args, "new_string"),
+            ),
+          );
+        case "append_file":
+          return this.ok(
+            call,
+            await this.appendFile(stringArg(args, "path"), stringArg(args, "content")),
+          );
+        case "replace_lines":
+          return this.ok(
+            call,
+            await this.replaceLines(
+              stringArg(args, "path"),
+              numberArg(args, "start_line"),
+              numberArg(args, "end_line"),
+              stringArg(args, "content"),
             ),
           );
         default:
@@ -290,6 +337,36 @@ export class WorkspaceFs {
     return `Archivo editado: ${rel}`;
   }
 
+  async appendFile(rel: string, content: string): Promise<string> {
+    const uri = this.resolve(rel);
+    let before = "";
+    try {
+      before = new TextDecoder("utf-8", { fatal: false }).decode(
+        await vscode.workspace.fs.readFile(uri),
+      );
+    } catch {
+      before = "";
+      await this.ensureParentDir(uri);
+    }
+
+    const after = before + content;
+    const bytes = new TextEncoder().encode(after);
+    await vscode.workspace.fs.writeFile(uri, bytes);
+    return `Archivo actualizado al final: ${rel} (+${new TextEncoder().encode(content).byteLength} bytes)`;
+  }
+
+  async replaceLines(
+    rel: string,
+    startLine: number,
+    endLine: number,
+    content: string,
+  ): Promise<string> {
+    const { after } = await this.previewReplaceLines(rel, startLine, endLine, content);
+    const uri = this.resolve(rel);
+    await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(after));
+    return `Archivo editado por lineas: ${rel} (${startLine}-${endLine})`;
+  }
+
   // -------------------------------------------------------------- Diff preview
   async previewWriteFile(rel: string, content: string): Promise<{ before: string; after: string }> {
     const uri = this.resolve(rel);
@@ -319,6 +396,48 @@ export class WorkspaceFs {
     if (second !== -1) throw new Error("old_string aparece mas de una vez.");
     const after = before.slice(0, first) + newString + before.slice(first + oldString.length);
     return { before, after };
+  }
+
+  async previewAppendFile(rel: string, content: string): Promise<{ before: string; after: string }> {
+    const uri = this.resolve(rel);
+    let before = "";
+    try {
+      before = new TextDecoder("utf-8", { fatal: false }).decode(
+        await vscode.workspace.fs.readFile(uri),
+      );
+    } catch {
+      before = "";
+    }
+    return { before, after: before + content };
+  }
+
+  async previewReplaceLines(
+    rel: string,
+    startLine: number,
+    endLine: number,
+    content: string,
+  ): Promise<{ before: string; after: string }> {
+    if (!Number.isInteger(startLine) || !Number.isInteger(endLine)) {
+      throw new Error("start_line y end_line deben ser enteros.");
+    }
+    if (startLine < 1 || endLine < startLine) {
+      throw new Error("Rango de lineas invalido.");
+    }
+
+    const uri = this.resolve(rel);
+    const before = new TextDecoder("utf-8", { fatal: false }).decode(
+      await vscode.workspace.fs.readFile(uri),
+    );
+    const eol = before.includes("\r\n") ? "\r\n" : "\n";
+    const lines = before.split(/\r?\n/);
+
+    if (endLine > lines.length) {
+      throw new Error(`Rango fuera del archivo. Ultima linea disponible: ${lines.length}.`);
+    }
+
+    const replacement = normalizeForEol(content, eol).split(eol);
+    const updated = lines.slice(0, startLine - 1).concat(replacement, lines.slice(endLine));
+    return { before, after: updated.join(eol) };
   }
 
   // -------------------------------------------------------------- Sandboxing
@@ -385,9 +504,12 @@ function optionalStringArg(args: Record<string, unknown>, key: string): string |
   if (typeof v !== "string") throw new Error(`Argumento '${key}' debe ser string.`);
   return v;
 }
-function numberArg(args: Record<string, unknown>, key: string, defaultValue: number): number {
+function numberArg(args: Record<string, unknown>, key: string, defaultValue?: number): number {
   const v = args[key];
-  if (v === undefined || v === null) return defaultValue;
+  if (v === undefined || v === null) {
+    if (defaultValue !== undefined) return defaultValue;
+    throw new Error(`Argumento '${key}' debe ser number.`);
+  }
   if (typeof v !== "number" || !Number.isFinite(v)) {
     throw new Error(`Argumento '${key}' debe ser number.`);
   }
@@ -398,4 +520,8 @@ function boolArg(args: Record<string, unknown>, key: string, defaultValue: boole
   if (v === undefined || v === null) return defaultValue;
   if (typeof v !== "boolean") throw new Error(`Argumento '${key}' debe ser boolean.`);
   return v;
+}
+
+function normalizeForEol(text: string, eol: string): string {
+  return text.replace(/\r\n|\r|\n/g, eol);
 }

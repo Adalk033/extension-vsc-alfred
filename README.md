@@ -91,3 +91,4 @@ Luego abre `extension-vsc/` en VSCode y ejecuta `F5`.
 - El estado del backend se refleja en la status bar (`alfred.checkBackend`).
 - En modo `Agent`, las tools MCP se exponen con prefijo `server__tool` para evitar colisiones.
 - Las tools remotas y las escrituras locales requieren confirmacion explicita, salvo si estan en `autoApprove`.
+Hola mundo

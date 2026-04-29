@@ -13,6 +13,7 @@
   /** @type {HTMLButtonElement} */ const cancelBtn = /** @type any */ (document.getElementById("cancel-btn"));
   /** @type {HTMLButtonElement} */ const newBtn = /** @type any */ (document.getElementById("new-btn"));
   /** @type {HTMLSelectElement} */ const modelSelect = /** @type any */ (document.getElementById("model-select"));
+  /** @type {HTMLButtonElement} */ const unloadModelBtn = /** @type any */ (document.getElementById("unload-model-btn"));
   /** @type {HTMLSpanElement} */ const statusDot = /** @type any */ (document.getElementById("status-dot"));
   /** @type {HTMLSpanElement} */ const statusText = /** @type any */ (document.getElementById("status-text"));
   /** @type {HTMLButtonElement} */ const modeChatBtn = /** @type any */ (document.getElementById("mode-chat-btn"));
@@ -29,6 +30,8 @@
 
   let streaming = false;
   let currentMode = "chat";
+  let backendOnline = false;
+  let modelLoaded = false;
   let runCounter = 0;
   let activeRunKey = "run-0";
 
@@ -347,6 +350,8 @@
     cancelBtn.disabled = !on;
     modeChatBtn.disabled = on;
     modeAgentBtn.disabled = on;
+    modelSelect.disabled = on || modelSelect.options.length === 0;
+    unloadModelBtn.disabled = on || !backendOnline || !modelLoaded;
     inputEl.disabled = false;
   }
 
@@ -356,17 +361,21 @@
       statusDot.classList.add("dot-unknown");
       statusText.textContent = "Comprobando backend...";
     } else if (ok) {
+      backendOnline = true;
       statusDot.classList.add("dot-ok");
       statusText.textContent = "Backend OK";
       statusText.title = "";
     } else {
+      backendOnline = false;
       statusDot.classList.add("dot-ko");
       statusText.textContent = "Backend offline";
       statusText.title = reason || "Abre la app de Alfred";
     }
+    unloadModelBtn.disabled = streaming || !backendOnline || !modelLoaded;
   }
 
-  function setModels(models, active) {
+  function setModels(models, active, loaded) {
+    modelLoaded = !!loaded;
     modelSelect.innerHTML = "";
     if (!models || models.length === 0) {
       const opt = document.createElement("option");
@@ -374,9 +383,10 @@
       opt.disabled = true;
       modelSelect.appendChild(opt);
       modelSelect.disabled = true;
+      unloadModelBtn.disabled = true;
       return;
     }
-    modelSelect.disabled = false;
+    modelSelect.disabled = streaming;
     for (const m of models) {
       const opt = document.createElement("option");
       opt.value = m.name;
@@ -384,6 +394,10 @@
       if (active && m.name === active) opt.selected = true;
       modelSelect.appendChild(opt);
     }
+    if (!active && modelSelect.options.length > 0) {
+      modelSelect.selectedIndex = -1;
+    }
+    unloadModelBtn.disabled = streaming || !backendOnline || !modelLoaded;
   }
 
   function setMode(mode) {
@@ -425,6 +439,9 @@
   modelSelect.addEventListener("change", () => {
     const v = modelSelect.value;
     if (v) vscode.postMessage({ type: "change-model", modelName: v });
+  });
+  unloadModelBtn.addEventListener("click", () => {
+    if (!streaming) vscode.postMessage({ type: "unload-model" });
   });
 
   modeChatBtn.addEventListener("click", () => {
@@ -470,7 +487,7 @@
         clearMessages();
         for (const m of msg.messages || []) appendMessage(m);
         setEmptyStateIfNeeded();
-        setModels(msg.models, msg.activeModel);
+        setModels(msg.models, msg.activeModel, msg.modelLoaded);
         setBackendStatus(msg.backendOk);
         setMode(msg.mode || "chat");
         break;
@@ -478,7 +495,7 @@
         setMode(msg.mode || "chat");
         break;
       case "models":
-        setModels(msg.models, msg.activeModel);
+        setModels(msg.models, msg.activeModel, msg.modelLoaded);
         break;
       case "backend-status":
         setBackendStatus(msg.ok, msg.reason);
