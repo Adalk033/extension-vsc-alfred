@@ -340,9 +340,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     this.currentStream = ac;
     this.currentAssistantMsgId = assistantMsg.id;
 
+    const enrichedText = await this.buildEnrichedQuestion(text, {
+      isAgent: false,
+      isFirstMessage: false,
+    });
+
     try {
       let answer = "";
-      for await (const evt of this.client.streamQuery(text, this.conversationId, ac.signal)) {
+      for await (const evt of this.client.streamQuery(enrichedText, this.conversationId, ac.signal)) {
         if (evt.type === "start") {
           this.currentRequestId = evt.request_id;
         } else if (evt.type === "token") {
@@ -419,10 +424,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
     this.currentAssistantMsgId = assistantMsg.id;
 
     let streamed = "";
+    const isFirstMessage = this.messages.length === 2; // userMsg + assistantMsg recien agregados
+
+    const enrichedText = await this.buildEnrichedQuestion(text, {
+      isAgent: true,
+      isFirstMessage,
+    });
 
     try {
       const result = await this.agentSession.run({
-        question: text,
+        question: enrichedText,
         conversationId: this.conversationId,
         signal: ac.signal,
         onEvent: (evt) => {
@@ -533,6 +544,47 @@ export class ChatViewProvider implements vscode.WebviewViewProvider, vscode.Disp
       case "finished":
         break;
     }
+  }
+
+  /**
+   * Extrae referencias @ruta/archivo del texto y devuelve una version enriquecida
+   * con el contenido de esos archivos adjunto como bloques XML.
+   * Si isAgent e isFirstMessage, tambien prepende el arbol del workspace.
+   * El texto visible en el chat NO cambia; solo el que se envia al backend.
+   */
+  private async buildEnrichedQuestion(
+    text: string,
+    opts: { isAgent: boolean; isFirstMessage: boolean },
+  ): Promise<string> {
+    const refs = [...text.matchAll(/@([^\s@"'<>]+)/g)].map((m) => m[1] as string);
+    const fileParts: string[] = [];
+
+    if (this.workspaceFs && refs.length > 0) {
+      for (const ref of refs) {
+        const content = await this.workspaceFs.readFileForRef(ref);
+        if (content !== null) {
+          fileParts.push(`<file path="${ref}">\n${content}\n</file>`);
+        }
+      }
+    }
+
+    let treePart = "";
+    if (opts.isAgent && opts.isFirstMessage && this.workspaceFs) {
+      try {
+        const tree = await this.workspaceFs.getWorkspaceTree();
+        treePart = `<workspace_tree>\n${tree}\n</workspace_tree>\n\n`;
+      } catch {
+        /* si falla el arbol, seguimos sin el */
+      }
+    }
+
+    if (!treePart && fileParts.length === 0) return text;
+
+    const parts: string[] = [];
+    if (treePart) parts.push(treePart.trimEnd());
+    if (fileParts.length > 0) parts.push(fileParts.join("\n\n"));
+    parts.push(text);
+    return parts.join("\n\n");
   }
 
   private async ensureConversation(): Promise<boolean> {

@@ -440,6 +440,67 @@ export class WorkspaceFs {
     return { before, after: updated.join(eol) };
   }
 
+  // -------------------------------------------------------------- Utilidades publicas
+
+  /**
+   * Devuelve un arbol compacto de 2 niveles del workspace (excluyendo carpetas de build/vendor).
+   * Util para inyectarlo como contexto inicial en el prompt del agente.
+   */
+  async getWorkspaceTree(): Promise<string> {
+    const EXCLUDED = new Set([
+      "node_modules", ".git", "dist", "build", "out", "obj", "bin", "target",
+      "vendor", ".cache", "__pycache__", ".venv", ".vscode", "_deps",
+    ]);
+
+    const rootEntries = await vscode.workspace.fs.readDirectory(this.root);
+    const lines: string[] = [];
+
+    const sorted = rootEntries.sort((a, b) => {
+      // dirs primero, luego archivos
+      if (a[1] !== b[1]) return a[1] === vscode.FileType.Directory ? -1 : 1;
+      return a[0].localeCompare(b[0]);
+    });
+
+    for (const [name, kind] of sorted) {
+      if (EXCLUDED.has(name) || name.startsWith(".")) continue;
+      if (kind === vscode.FileType.Directory) {
+        lines.push(`${name}/`);
+        try {
+          const children = await vscode.workspace.fs.readDirectory(
+            vscode.Uri.joinPath(this.root, name),
+          );
+          const childSorted = children
+            .filter(([cn]) => !EXCLUDED.has(cn) && !cn.startsWith("."))
+            .sort((a, b) => {
+              if (a[1] !== b[1]) return a[1] === vscode.FileType.Directory ? -1 : 1;
+              return a[0].localeCompare(b[0]);
+            });
+          for (const [cn, ck] of childSorted) {
+            lines.push(`  ${cn}${ck === vscode.FileType.Directory ? "/" : ""}`);
+          }
+        } catch {
+          /* sin permisos o error: omitir hijos */
+        }
+      } else {
+        lines.push(name);
+      }
+    }
+
+    return lines.length === 0 ? "(workspace vacio)" : lines.join("\n");
+  }
+
+  /**
+   * Lee un archivo referenciado por ruta relativa para adjuntarlo como contexto.
+   * Devuelve null si la ruta no existe o no es valida.
+   */
+  async readFileForRef(rel: string): Promise<string | null> {
+    try {
+      return await this.readFile(rel);
+    } catch {
+      return null;
+    }
+  }
+
   // -------------------------------------------------------------- Sandboxing
   private resolve(rel: string): vscode.Uri {
     if (typeof rel !== "string" || rel.length === 0) {

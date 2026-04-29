@@ -2,7 +2,7 @@
   "name": "alfred-vsc",
   "displayName": "Alfred",
   "description": "Chat lateral con Alfred (modelo local) dentro de VSCode.",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "alfred",
   "license": "MIT",
   "repository": {
