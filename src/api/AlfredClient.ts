@@ -3,10 +3,12 @@
 
 import type { ModelInfo } from "../chat/messages";
 import type { AgentDonePayload, ToolCall, ToolResult, ToolSpec } from "../agent/types";
+import { defaultConnectionFilePath, readSessionToken } from "./connection";
 
 export interface AlfredClientOptions {
   baseUrl: string;
   timeoutMs?: number;
+  connectionFilePath?: string;
 }
 
 export interface QueryResult {
@@ -67,14 +69,20 @@ const DEFAULT_TIMEOUT = 120_000;
 export class AlfredClient {
   baseUrl: string;
   timeoutMs: number;
+  connectionFilePath: string;
 
   constructor(opts: AlfredClientOptions) {
     this.baseUrl = opts.baseUrl.replace(/\/+$/, "");
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT;
+    this.connectionFilePath = opts.connectionFilePath || defaultConnectionFilePath();
   }
 
   setBaseUrl(url: string): void {
     this.baseUrl = url.replace(/\/+$/, "");
+  }
+
+  setConnectionFilePath(filePath: string): void {
+    this.connectionFilePath = filePath || defaultConnectionFilePath();
   }
 
   // ---------------------------------------------------------------- Salud
@@ -152,7 +160,7 @@ export class AlfredClient {
     }
     const timer = setTimeout(() => ac.abort(), this.timeoutMs);
     try {
-      const res = await fetch(url, {
+      const res = await this.fetchWithAuth(url, {
         method,
         headers: body !== undefined ? { "content-type": "application/json" } : undefined,
         body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -167,7 +175,7 @@ export class AlfredClient {
         } catch {
           /* not json */
         }
-        throw new AlfredApiError(res.status, msg, text);
+        throw this.apiError(res.status, text);
       }
       if (!text) return undefined as unknown as T;
       return JSON.parse(text) as T;
@@ -184,7 +192,7 @@ export class AlfredClient {
     signal: AbortSignal,
   ): AsyncGenerator<StreamEvent, void, void> {
     const url = `${this.baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
-    const res = await fetch(url, {
+    const res = await this.fetchWithAuth(url, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -196,7 +204,7 @@ export class AlfredClient {
 
     if (!res.ok) {
       const text = await res.text();
-      throw new AlfredApiError(res.status, text, text);
+      throw this.apiError(res.status, text);
     }
     if (!res.body) {
       throw new Error("Respuesta SSE sin body");
@@ -239,7 +247,7 @@ export class AlfredClient {
     signal: AbortSignal,
   ): AsyncGenerator<AgentStreamEvent, void, void> {
     const url = `${this.baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
-    const res = await fetch(url, {
+    const res = await this.fetchWithAuth(url, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -251,7 +259,7 @@ export class AlfredClient {
 
     if (!res.ok) {
       const text = await res.text();
-      throw new AlfredApiError(res.status, text, text);
+      throw this.apiError(res.status, text);
     }
     if (!res.body) {
       throw new Error("Respuesta SSE sin body");
@@ -286,6 +294,37 @@ export class AlfredClient {
         /* ignore */
       }
     }
+  }
+
+  private async fetchWithAuth(url: string, init: RequestInit): Promise<Response> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const headers = new Headers(init.headers);
+      const token = await readSessionToken(this.connectionFilePath, this.baseUrl);
+      if (token) headers.set("X-Alfred-Token", token);
+
+      const response = await fetch(url, { ...init, headers });
+      if (response.status !== 401 || attempt === 1) {
+        return response;
+      }
+
+      await response.arrayBuffer();
+    }
+    throw new Error("No se pudo completar la peticion a Alfred.");
+  }
+
+  private apiError(status: number, body: string): AlfredApiError {
+    let message = body;
+    try {
+      const parsed = JSON.parse(body) as { error?: string; message?: string; detail?: string };
+      message = parsed.error ?? parsed.message ?? parsed.detail ?? body;
+    } catch {
+      /* no es JSON */
+    }
+    if (status === 401) {
+      message =
+        "No autorizado. Abre o reinicia Alfred para renovar la conexion segura con VS Code.";
+    }
+    return new AlfredApiError(status, message, body);
   }
 }
 

@@ -16,8 +16,13 @@ export function activate(context: vscode.ExtensionContext): void {
   const baseUrl = cfg.get<string>("backendUrl", "http://127.0.0.1:8000");
   const requestTimeoutMs = cfg.get<number>("requestTimeoutMs", 120000);
   const healthInterval = cfg.get<number>("healthCheckIntervalMs", 15000);
+  const connectionFile = cfg.get<string>("connectionFile", "");
 
-  const client = new AlfredClient({ baseUrl, timeoutMs: requestTimeoutMs });
+  const client = new AlfredClient({
+    baseUrl,
+    timeoutMs: requestTimeoutMs,
+    connectionFilePath: connectionFile,
+  });
   const health = new HealthMonitor(client, healthInterval);
   const store = new ConversationStore(context.globalState);
   const proposedProvider = new ProposedContentProvider();
@@ -54,7 +59,9 @@ export function activate(context: vscode.ExtensionContext): void {
       const newBase = next.get<string>("backendUrl", "http://127.0.0.1:8000");
       const newInterval = next.get<number>("healthCheckIntervalMs", 15000);
       const newTimeout = next.get<number>("requestTimeoutMs", 120000);
+      const newConnectionFile = next.get<string>("connectionFile", "");
       client.setBaseUrl(newBase);
+      client.setConnectionFilePath(newConnectionFile);
       client.timeoutMs = newTimeout;
       health.setIntervalMs(newInterval);
       void health.checkOnce();

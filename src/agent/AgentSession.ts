@@ -1,7 +1,6 @@
 import * as vscode from "vscode";
 import { AlfredApiError, AlfredClient, type AgentQueryBody } from "../api/AlfredClient";
 import { ApprovalGate } from "./Approval";
-import { McpToolHub } from "./McpToolHub";
 import { WorkspaceFs } from "./WorkspaceFs";
 import type { AgentDonePayload, AgentLoopEvent, ToolCall, ToolResult } from "./types";
 
@@ -30,7 +29,6 @@ export class AgentSession {
     private readonly client: AlfredClient,
     private readonly fs: WorkspaceFs,
     private readonly approval: ApprovalGate,
-    private readonly mcp: McpToolHub | null,
   ) {}
 
   async run(opts: AgentSessionRunOptions): Promise<AgentSessionResult> {
@@ -39,10 +37,7 @@ export class AgentSession {
 
     const allCalls: ToolCall[] = [];
     const allResults: ToolResult[] = [];
-    const tools = [
-      ...this.fs.getTools(),
-      ...(this.mcp ? await this.mcp.listTools(opts.signal) : []),
-    ];
+    const tools = this.fs.getTools();
 
     let nextQuestion = opts.question;
     let toolResultsForNext: ToolResult[] | undefined;
@@ -269,10 +264,6 @@ export class AgentSession {
   private async executeTool(call: ToolCall, signal: AbortSignal): Promise<ToolResult> {
     if (this.fs.hasTool(call.name)) {
       return this.fs.execute(call);
-    }
-
-    if (this.mcp?.canHandle(call.name)) {
-      return this.mcp.callTool(call, signal);
     }
 
     return {

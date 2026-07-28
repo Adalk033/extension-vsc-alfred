@@ -2,7 +2,7 @@
   "name": "alfred-vsc",
   "displayName": "Alfred",
   "description": "Chat lateral con Alfred (modelo local) dentro de VSCode.",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "publisher": "alfred",
   "license": "MIT",
   "repository": {
@@ -138,6 +138,11 @@
           "default": 15000,
           "description": "Intervalo (ms) entre comprobaciones automaticas de /health. 0 desactiva."
         },
+        "alfred.connectionFile": {
+          "type": "string",
+          "default": "",
+          "description": "Ruta opcional a api-connection.json. Vacio usa %LOCALAPPDATA%\\Alfred\\api-connection.json."
+        },
         "alfred.agent.autoApprove": {
           "type": "array",
           "default": [
@@ -149,63 +154,7 @@
           "items": {
             "type": "string"
           },
-          "description": "Lista de tools del modo agent que se aprueban automaticamente sin pedir confirmacion (incluye nombres MCP prefijados, ej: git__status)."
-        },
-        "alfred.agent.mcpServers": {
-          "type": "array",
-          "default": [
-            {
-              "name": "alfred",
-              "command": "npx",
-              "args": [
-                "-y",
-                "alfred-mcp"
-              ],
-              "enabled": true
-            },
-            {
-              "name": "git",
-              "command": "uvx",
-              "args": [
-                "mcp-server-git"
-              ],
-              "enabled": true
-            }
-          ],
-          "items": {
-            "type": "object",
-            "properties": {
-              "name": {
-                "type": "string"
-              },
-              "command": {
-                "type": "string"
-              },
-              "args": {
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "cwd": {
-                "type": "string"
-              },
-              "env": {
-                "type": "object",
-                "additionalProperties": {
-                  "type": "string"
-                }
-              },
-              "enabled": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "name",
-              "command"
-            ]
-          },
-          "description": "Servidores MCP stdio usados por el modo agent. Soporta ${workspaceFolder} y ${env:VAR} en command/args/cwd/env."
+          "description": "Lista de tools locales de solo lectura que se aprueban automaticamente."
         },
         "alfred.agent.maxIterations": {
           "type": "number",
@@ -233,8 +182,5 @@
     "@types/vscode": "^1.90.0",
     "rimraf": "^5.0.7",
     "typescript": "^5.5.0"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0"
   }
 }
